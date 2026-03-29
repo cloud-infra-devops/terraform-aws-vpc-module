@@ -1,0 +1,24 @@
+misconfiguration:
+  # Exit with code 1 if any misconfiguration is found
+  exit-code: 1
+
+scan:
+  # Scan for misconfigurations only
+  scanners:
+    - misconfig
+
+severity:
+  - CRITICAL
+  - HIGH
+  - MEDIUM
+  - LOW
+  - UNKNOWN
+
+format: table
+
+# Do not fail on unfixed issues
+ignore-unfixed: true
+
+# Terraform-specific misconfiguration checks
+terraform:
+  vars: []

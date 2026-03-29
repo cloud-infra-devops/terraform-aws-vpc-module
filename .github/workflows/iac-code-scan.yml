@@ -1,0 +1,255 @@
+# It is reusable workflow that can be called in other workflow
+# Purpose :
+# Unless terraform Init, Validate, Plan checks pass, the commit to the target branch will not happen or the PR will not pass & cannot be merged to the destination branch.
+# Unless Checkov, Trivy code scan checks pass, the commit to the target branch will not happen or the PR will not pass & cannot be merged to the destination branch.
+# If there are no examples/main.tf file in the repo, commit to the target branch or the PR will not pass & cannot be merged to the destination branch.
+# If there are no README.md file in the root of the repo, commit to the target branch or the PR will not pass & cannot be merged to the destination branch.
+# If any of the above four checks fail, the commit to the target branch or the PR will not pass & cannot be merged to the destination branch
+
+name: iac-code-quality-checks
+run-name: ${{ github.actor }} has triggered the GitHub Actions
+# Controls when the action will run. Invokes the workflow on push events on all branches except for the main/master branches and on pull requests
+on:
+  workflow_call:
+    secrets:
+      TF_API_TOKEN:
+        required: true
+  # Triggers the workflow on push or pull request events
+  push:
+    branches-ignore:
+      - "main"
+      - "master"
+    paths-ignore:
+      - "**/README.md"
+  pull_request:
+    branches: ["feature/*", "develop", "release", "master"]
+    types: [assigned, opened, reopened, edited, ready_for_review, synchronize]
+env:
+  tfcode_path: "."
+  # tfc_hostname: "app.terraform.io"
+  # tfc_organisation: "cloud-infra-dev"
+  # tfc_workspace: "testing-terraform-aws-modules"
+
+jobs:
+  check-required-files:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Check required files exist
+        run: |
+          missing=0
+          if [ ! -f "examples/main.tf" ]; then
+            echo "::error::Missing required file: examples/main.tf"
+            missing=1
+          fi
+          if [ ! -f "README.md" ]; then
+            echo "::error::Missing required file: README.md"
+            missing=1
+          fi
+          if [ ! -f "trivy.yaml" ]; then
+            echo "::error::Missing required file: trivy.yaml"
+            missing=1
+          fi
+          if [ ! -f ".tflint.hcl" ]; then
+            echo "::error::Missing required file: .tflint.hcl"
+            missing=1
+          fi
+          exit $missing
+
+  checkov-scan:
+    runs-on: ubuntu-latest
+    needs: check-required-files
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Run Checkov scan
+        uses: bridgecrewio/checkov-action@v12.3092.0
+        with:
+          directory: ${{ env.tfcode_path }}
+          framework: terraform
+          output_format: cli,sarif
+          output_file_path: console,results.sarif
+          skip_check: CKV_TF_1
+          soft_fail: false
+        continue-on-error: false
+
+      # - name: Upload Checkov SARIF report
+      #   if: always()
+      #   uses: github/codeql-action/upload-sarif@v3
+      #   with:
+      #     sarif_file: results.sarif
+      #     category: checkov
+
+  trivy-scan:
+    runs-on: ubuntu-latest
+    needs: check-required-files
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Run Trivy config scan for Terraform
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          scan-type: "config"
+          ignore-unfixed: true
+          scan-ref: ${{ env.tfcode_path }}
+          format: "table"
+          severity: "CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN"
+          exit-code: "1"
+          trivy-config: trivy.yaml
+
+      - name: Fail on Trivy misconfiguration findings
+        if: failure()
+        run: |
+          echo "::error::Trivy detected misconfiguration errors. Review the scan output above."
+          exit 1
+
+  tflint-scan:
+    runs-on: ubuntu-latest
+    needs: check-required-files
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v6.2.2
+        with:
+          tflint_version: v0.61.0
+
+      - name: Run TFLint
+        run: |
+          tflint --init
+          tflint --chdir=${{ env.tfcode_path }} --format=compact
+        continue-on-error: false
+
+  scan-results:
+    runs-on: ubuntu-latest
+    needs: [checkov-scan, trivy-scan, tflint-scan]
+    if: always()
+    steps:
+      - name: Scan Results Summary
+        run: |
+          checkov="${{ needs.checkov-scan.result }}"
+          trivy="${{ needs.trivy-scan.result }}"
+          tflint="${{ needs.tflint-scan.result }}"
+
+          status_icon()  { [[ "$1" == "success" ]] && echo "✅ PASSED" || echo "❌ FAILED"; }
+          status_color() { [[ "$1" == "success" ]] && echo "\e[32m" || echo "\e[31m"; }
+          RESET="\e[0m"
+          BOLD="\e[1m"
+          CYAN="\e[36m"
+          YELLOW="\e[33m"
+
+          echo ""
+          echo -e "${BOLD}${CYAN}╔══════════════════════════════════════════════════╗${RESET}"
+          echo -e "${BOLD}${CYAN}║       🔍  IaC Security Scan Results Summary      ║${RESET}"
+          echo -e "${BOLD}${CYAN}╠══════════════════════════════════════════════════╣${RESET}"
+          echo -e "${BOLD}${CYAN}║  Tool         │ Status                           ║${RESET}"
+          echo -e "${BOLD}${CYAN}╠═══════════════╪══════════════════════════════════╣${RESET}"
+          echo -e "${BOLD}${CYAN}║${RESET}  🛡️  Checkov   │ $(status_color $checkov)${BOLD}$(status_icon $checkov)${RESET}$(status_color $checkov)                          ${RESET}${BOLD}${CYAN}║${RESET}"
+          echo -e "${BOLD}${CYAN}║${RESET}  🔬  Trivy     │ $(status_color $trivy)${BOLD}$(status_icon $trivy)${RESET}$(status_color $trivy)                          ${RESET}${BOLD}${CYAN}║${RESET}"
+          echo -e "${BOLD}${CYAN}║${RESET}  🧹  TFLint    │ $(status_color $tflint)${BOLD}$(status_icon $tflint)${RESET}$(status_color $tflint)                          ${RESET}${BOLD}${CYAN}║${RESET}"
+          echo -e "${BOLD}${CYAN}╠══════════════════════════════════════════════════╣${RESET}"
+
+          if [[ "$checkov" != "success" || "$trivy" != "success" || "$tflint" != "success" ]]; then
+            echo -e "${BOLD}${CYAN}║${RESET}  ${BOLD}\e[31m⛔  Overall: FAILED — review scan output above${RESET}   ${BOLD}${CYAN}║${RESET}"
+            echo -e "${BOLD}${CYAN}╚══════════════════════════════════════════════════╝${RESET}"
+            echo ""
+            echo "::error::One or more scans failed. checkov=$checkov, trivy=$trivy, tflint=$tflint"
+            exit 1
+          fi
+
+          echo -e "${BOLD}${CYAN}║${RESET}  ${BOLD}\e[32m🎉  Overall: ALL SCANS PASSED SUCCESSFULLY!${RESET}      ${BOLD}${CYAN}║${RESET}"
+          echo -e "${BOLD}${CYAN}╚══════════════════════════════════════════════════╝${RESET}"
+          echo ""
+
+  # terraform-init-validate-plan:
+  #   runs-on: ubuntu-latest
+  #   defaults:
+  #     run:
+  #       shell: bash
+  #   permissions:
+  #     contents: read
+  #     id-token: write
+  #     packages: read
+  #   steps:
+  #     # Configure HCP Terraform API token, since we are using remote backend option of HCP Terraform in AWS code
+  #     - name: Setup Terraform CLI
+  #       uses: hashicorp/setup-terraform@v2.0.2
+  #       with:
+  #         terraform_wrapper: false
+  #         cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+  #         terraform_version: latest
+  #     # Invoke the Terraform commands
+  #     - name: Terraform format check
+  #       # Add the AWS Creds as ENV variable in HCP Terraform workspace, since the tf run happens in HCP Terraform environment
+
+  #       run: |
+  #         echo `pwd`
+  #         echo "** Running Terraform Format Check**"
+  #         terraform fmt -check -recursive
+  #       working-directory: ${{ env.tfcode_path }}
+  #       continue-on-error: true
+  #     - name: Terraform init and validate
+  #       run: |
+  #         echo `pwd`
+  #         echo "** Running Terraform Init**"
+  #         terraform init
+
+  #         echo "** Running Terraform Validate**"
+  #         terraform validate
+  #       working-directory: ${{ env.tfcode_path }}
+  #       continue-on-error: false
+  #     - name: Terraform Plan
+  #       uses: hashicorp/tfc-workflows-github/actions/create-run@v1.3.0
+  #       id: run
+  #       with:
+  #         workspace: ${{ env.tfc_workspace }}
+  #         plan_only: true
+  #         message: "Plan Run from GitHub Actions"
+  #         ## Specify hostname,token,organization to connect to the HCP Terraform Cloud environment, since we are using remote backend option of HCP Terraform in AWS code
+  #         hostname: ${{ env.tfc_hostname }}
+  #         token: ${{ secrets.TF_API_TOKEN }}
+  #         organization: ${{ env.tfc_organisation }}
+  #     - name: Check Terraform Plan status
+  #       run: |
+  #         if [ "${{ steps.run.outputs.run_status }}" != "planned_and_finished" ]; then
+  #           echo "::error::Terraform Plan failed with status: ${{ steps.run.outputs.run_status }}"
+  #           exit 1
+  #         fi
+  #     - name: Terraform Plan Output
+  #       uses: hashicorp/tfc-workflows-github/actions/plan-output@v1.3.0
+  #       id: plan-output
+  #       with:
+  #         hostname: ${{ env.tfc_hostname }}
+  #         token: ${{ secrets.TF_API_TOKEN }}
+  #         organization: ${{ env.tfc_organisation }}
+  #         plan: ${{ steps.run.outputs.plan_id }}
+  #     - name: Reference Plan Output
+  #       run: |-
+  #         echo "Plan status: ${{ steps.plan-output.outputs.plan_status }}"
+  #         echo "Resources to Add: ${{ steps.plan-output.outputs.add }}"
+  #         echo "Resources to Change: ${{ steps.plan-output.outputs.change }}"
+  #         echo "Resources to Destroy: ${{ steps.plan-output.outputs.destroy }}"

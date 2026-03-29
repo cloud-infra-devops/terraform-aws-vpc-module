@@ -8,7 +8,7 @@ resource "aws_kms_key" "flow_logs" {
   description             = "KMS key for VPC flow logs CloudWatch log group - ${var.name}"
   deletion_window_in_days = 7
   enable_key_rotation     = true
-  tags                    = merge(var.tags, { Name = "${var.name}-flow-logs-key" })
+  tags                    = merge(local.common_tags, { Name = "${var.name}-flow-logs-key" })
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -49,9 +49,9 @@ resource "aws_kms_key" "flow_logs" {
 resource "aws_cloudwatch_log_group" "flow_logs" {
   count             = var.enable_flow_logs ? 1 : 0
   name              = "/aws/vpc/flow-logs/${var.name}"
-  retention_in_days = var.flow_logs_retention_days
+  retention_in_days = 365
   kms_key_id        = aws_kms_key.flow_logs[0].arn
-  tags              = var.tags
+  tags              = merge(local.common_tags, { Name = "/aws/vpc/flow-logs/${var.name}" })
 }
 
 resource "aws_iam_role" "flow_logs" {
@@ -67,7 +67,7 @@ resource "aws_iam_role" "flow_logs" {
     }]
   })
 
-  tags = var.tags
+  tags = merge(local.common_tags, { Name = "${var.name}-vpc-flow-logs-role" })
 }
 
 resource "aws_iam_role_policy" "flow_logs" {
@@ -104,5 +104,5 @@ resource "aws_flow_log" "this" {
   iam_role_arn    = aws_iam_role.flow_logs[0].arn
   log_destination = aws_cloudwatch_log_group.flow_logs[0].arn
 
-  tags = merge(var.tags, { Name = "${var.name}-flow-log" })
+  tags = merge(local.common_tags, { Name = "${var.name}-flow-log" })
 }

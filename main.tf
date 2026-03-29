@@ -10,7 +10,12 @@ locals {
   # Number of NAT gateways: one per AZ or just one
   nat_count = var.create_nat_gateway ? (var.single_nat_gateway ? 1 : var.num_public_subnets) : 0
 
-  common_tags = merge(var.tags, { Name = var.name })
+  common_tags = merge(var.tags, {
+    Name        = var.name
+    Environment = var.environment
+    Project     = var.project
+    Owner       = var.owner
+  })
 }
 
 # ─── VPC ────────────────────────────────────────────────────────────────────

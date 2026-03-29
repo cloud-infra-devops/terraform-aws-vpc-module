@@ -22,7 +22,7 @@ resource "aws_cloudwatch_metric_alarm" "nat_error_port_allocation" {
   treat_missing_data  = "notBreaching"
   alarm_actions       = var.cloudwatch_alarm_actions
   ok_actions          = var.cloudwatch_alarm_actions
-  tags                = var.tags
+  tags                = merge(local.common_tags, { Name = "${var.name}-nat-${count.index + 1}-ErrorPortAllocation" })
 }
 
 resource "aws_cloudwatch_metric_alarm" "nat_packets_drop" {
@@ -40,7 +40,7 @@ resource "aws_cloudwatch_metric_alarm" "nat_packets_drop" {
   treat_missing_data  = "notBreaching"
   alarm_actions       = var.cloudwatch_alarm_actions
   ok_actions          = var.cloudwatch_alarm_actions
-  tags                = var.tags
+  tags                = merge(local.common_tags, { Name = "${var.name}-nat-${count.index + 1}-PacketsDropCount" })
 }
 
 resource "aws_cloudwatch_metric_alarm" "nat_connection_attempt_count" {
@@ -58,7 +58,7 @@ resource "aws_cloudwatch_metric_alarm" "nat_connection_attempt_count" {
   treat_missing_data  = "notBreaching"
   alarm_actions       = var.cloudwatch_alarm_actions
   ok_actions          = var.cloudwatch_alarm_actions
-  tags                = var.tags
+  tags                = merge(local.common_tags, { Name = "${var.name}-nat-${count.index + 1}-ConnectionAttemptCount-High" })
 }
 
 resource "aws_cloudwatch_metric_alarm" "nat_connection_established_count" {
@@ -76,7 +76,7 @@ resource "aws_cloudwatch_metric_alarm" "nat_connection_established_count" {
   treat_missing_data  = "notBreaching"
   alarm_actions       = var.cloudwatch_alarm_actions
   ok_actions          = var.cloudwatch_alarm_actions
-  tags                = var.tags
+  tags                = merge(local.common_tags, { Name = "${var.name}-nat-${count.index + 1}-ConnectionEstablishedCount-Low" })
 }
 
 resource "aws_cloudwatch_metric_alarm" "nat_bytes_out_to_destination" {
@@ -94,7 +94,7 @@ resource "aws_cloudwatch_metric_alarm" "nat_bytes_out_to_destination" {
   treat_missing_data  = "notBreaching"
   alarm_actions       = var.cloudwatch_alarm_actions
   ok_actions          = var.cloudwatch_alarm_actions
-  tags                = var.tags
+  tags                = merge(local.common_tags, { Name = "${var.name}-nat-${count.index + 1}-BytesOutToDestination-High" })
 }
 
 resource "aws_cloudwatch_metric_alarm" "nat_bytes_in_from_destination" {
@@ -112,7 +112,7 @@ resource "aws_cloudwatch_metric_alarm" "nat_bytes_in_from_destination" {
   treat_missing_data  = "notBreaching"
   alarm_actions       = var.cloudwatch_alarm_actions
   ok_actions          = var.cloudwatch_alarm_actions
-  tags                = var.tags
+  tags                = merge(local.common_tags, { Name = "${var.name}-nat-${count.index + 1}-BytesInFromDestination-High" })
 }
 
 # ── VPC Flow Logs delivery error alarm ──────────────────────────────────────
@@ -132,7 +132,7 @@ resource "aws_cloudwatch_metric_alarm" "flow_log_delivery_error" {
   treat_missing_data  = "notBreaching"
   alarm_actions       = var.cloudwatch_alarm_actions
   ok_actions          = var.cloudwatch_alarm_actions
-  tags                = var.tags
+  tags                = merge(local.common_tags, { Name = "${var.name}-FlowLog-DeliveryError" })
 }
 
 resource "aws_cloudwatch_metric_alarm" "flow_log_throttle" {
@@ -150,5 +150,5 @@ resource "aws_cloudwatch_metric_alarm" "flow_log_throttle" {
   treat_missing_data  = "notBreaching"
   alarm_actions       = var.cloudwatch_alarm_actions
   ok_actions          = var.cloudwatch_alarm_actions
-  tags                = var.tags
+  tags                = merge(local.common_tags, { Name = "${var.name}-FlowLog-ThrottledEvents" })
 }

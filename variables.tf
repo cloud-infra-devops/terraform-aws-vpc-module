@@ -91,17 +91,6 @@ variable "enable_flow_logs" {
   default     = true
 }
 
-variable "flow_logs_retention_days" {
-  description = "CloudWatch log group retention in days for VPC flow logs"
-  type        = number
-  default     = 365
-
-  validation {
-    condition     = contains([365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653], var.flow_logs_retention_days)
-    error_message = "flow_logs_retention_days must be at least 365 days (1 year). Valid values: 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653."
-  }
-}
-
 variable "enable_dns_hostnames" {
   description = "Enable DNS hostnames in the VPC"
   type        = bool
@@ -112,6 +101,21 @@ variable "enable_dns_support" {
   description = "Enable DNS support in the VPC"
   type        = bool
   default     = true
+}
+
+variable "environment" {
+  description = "Environment name (e.g. production, staging, development)"
+  type        = string
+}
+
+variable "project" {
+  description = "Project name that owns this VPC"
+  type        = string
+}
+
+variable "owner" {
+  description = "Team or individual responsible for this VPC"
+  type        = string
 }
 
 variable "tags" {

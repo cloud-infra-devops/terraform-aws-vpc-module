@@ -1,0 +1,176 @@
+# It is reusable workflow that can be called in other workflow
+# Purpose :
+# Unless terraform Init, Validate, Plan checks pass, the commit to the target branch will not happen or the PR will not pass & cannot be merged to the destination branch.
+# Unless Checkov, Trivy code scan checks pass, the commit to the target branch will not happen or the PR will not pass & cannot be merged to the destination branch.
+# If there are no examples/main.tf file in the repo, commit to the target branch or the PR will not pass & cannot be merged to the destination branch.
+# If there are no README.md file in the root of the repo, commit to the target branch or the PR will not pass & cannot be merged to the destination branch.
+# If any of the above four checks fail, the commit to the target branch or the PR will not pass & cannot be merged to the destination branch
+
+name: iac-code-quality-checks
+run-name: ${{ github.actor }} has triggered the GitHub Actions
+# Controls when the action will run. Invokes the workflow on push events on all branches except for the main/master branches and on pull requests
+on:
+  workflow_call:
+    secrets:
+      TF_API_TOKEN:
+        required: true
+  # Triggers the workflow on push or pull request events
+  push:
+    branches-ignore:
+      - "main"
+      - "master"
+    paths-ignore:
+      - "**/README.md"
+  pull_request:
+    branches: ["feature/*", "develop", "release", "master"]
+    types: [assigned, opened, reopened, edited, ready_for_review, synchronize]
+env:
+  tfcode_path: "."
+  # tfc_hostname: "app.terraform.io"
+  # tfc_organisation: "cloud-infra-dev"
+  # tfc_workspace: "testing-terraform-aws-modules"
+
+jobs:
+  scan-terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+      issues: write
+      packages: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Check required files exist
+        run: |
+          missing=0
+          if [ ! -f "examples/main.tf" ]; then
+            echo "::error::Missing required file: examples/main.tf"
+            missing=1
+          fi
+          if [ ! -f "README.md" ]; then
+            echo "::error::Missing required file: README.md"
+            missing=1
+          fi
+          exit $missing
+
+      - name: Run Checkov scan
+        uses: bridgecrewio/checkov-action@v12.3092.0
+        with:
+          directory: ${{ env.tfcode_path }}
+          framework: terraform
+          output_format: cli,sarif
+          output_file_path: console,results.sarif
+          soft_fail: false
+        continue-on-error: false
+
+      - name: Upload Checkov SARIF report
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif
+          category: checkov
+
+      - name: Run Trivy config scan for Terraform
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          scan-type: "config"
+          ignore-unfixed: true
+          scan-ref: ${{ env.tfcode_path }}
+          format: "table"
+          severity: "CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN"
+          exit-code: "1"
+          trivy-config: trivy.yaml
+
+      - name: Fail on Trivy misconfiguration findings
+        if: failure()
+        run: |
+          echo "::error::Trivy detected misconfiguration errors. Review the scan output above."
+          exit 1
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v6.2.2
+        with:
+          tflint_version: v0.61.0
+
+      - name: Run TFLint
+        run: |
+          tflint --init
+          tflint --chdir=${{ env.tfcode_path }} --format=compact
+        continue-on-error: false
+
+  # terraform-init-validate-plan:
+  #   runs-on: ubuntu-latest
+  #   defaults:
+  #     run:
+  #       shell: bash
+  #   permissions:
+  #     contents: read
+  #     id-token: write
+  #     packages: read
+  #   steps:
+  #     # Configure HCP Terraform API token, since we are using remote backend option of HCP Terraform in AWS code
+  #     - name: Setup Terraform CLI
+  #       uses: hashicorp/setup-terraform@v2.0.2
+  #       with:
+  #         terraform_wrapper: false
+  #         cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+  #         terraform_version: latest
+  #     # Invoke the Terraform commands
+  #     - name: Terraform format check
+  #       # Add the AWS Creds as ENV variable in HCP Terraform workspace, since the tf run happens in HCP Terraform environment
+
+  #       run: |
+  #         echo `pwd`
+  #         echo "** Running Terraform Format Check**"
+  #         terraform fmt -check -recursive
+  #       working-directory: ${{ env.tfcode_path }}
+  #       continue-on-error: true
+  #     - name: Terraform init and validate
+  #       run: |
+  #         echo `pwd`
+  #         echo "** Running Terraform Init**"
+  #         terraform init
+
+  #         echo "** Running Terraform Validate**"
+  #         terraform validate
+  #       working-directory: ${{ env.tfcode_path }}
+  #       continue-on-error: false
+  #     - name: Terraform Plan
+  #       uses: hashicorp/tfc-workflows-github/actions/create-run@v1.3.0
+  #       id: run
+  #       with:
+  #         workspace: ${{ env.tfc_workspace }}
+  #         plan_only: true
+  #         message: "Plan Run from GitHub Actions"
+  #         ## Specify hostname,token,organization to connect to the HCP Terraform Cloud environment, since we are using remote backend option of HCP Terraform in AWS code
+  #         hostname: ${{ env.tfc_hostname }}
+  #         token: ${{ secrets.TF_API_TOKEN }}
+  #         organization: ${{ env.tfc_organisation }}
+  #     - name: Check Terraform Plan status
+  #       run: |
+  #         if [ "${{ steps.run.outputs.run_status }}" != "planned_and_finished" ]; then
+  #           echo "::error::Terraform Plan failed with status: ${{ steps.run.outputs.run_status }}"
+  #           exit 1
+  #         fi
+  #     - name: Terraform Plan Output
+  #       uses: hashicorp/tfc-workflows-github/actions/plan-output@v1.3.0
+  #       id: plan-output
+  #       with:
+  #         hostname: ${{ env.tfc_hostname }}
+  #         token: ${{ secrets.TF_API_TOKEN }}
+  #         organization: ${{ env.tfc_organisation }}
+  #         plan: ${{ steps.run.outputs.plan_id }}
+  #     - name: Reference Plan Output
+  #       run: |-
+  #         echo "Plan status: ${{ steps.plan-output.outputs.plan_status }}"
+  #         echo "Resources to Add: ${{ steps.plan-output.outputs.add }}"
+  #         echo "Resources to Change: ${{ steps.plan-output.outputs.change }}"
+  #         echo "Resources to Destroy: ${{ steps.plan-output.outputs.destroy }}"

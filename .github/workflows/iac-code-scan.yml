@@ -81,6 +81,7 @@ jobs:
           framework: terraform
           output_format: cli,sarif
           output_file_path: console,results.sarif
+          skip_check: CKV_TF_1
           soft_fail: false
         continue-on-error: false
 

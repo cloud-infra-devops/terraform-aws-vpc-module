@@ -103,6 +103,17 @@ variable "enable_dns_support" {
   default     = true
 }
 
+variable "name" {
+  description = "Name prefix for all resources"
+  type        = string
+  default     = "vpc"
+
+  validation {
+    condition     = can(regex("^[a-zA-Z0-9-]+$", var.name)) && length(var.name) <= 32
+    error_message = "name must contain only alphanumeric characters and hyphens, and be at most 32 characters."
+  }
+}
+
 variable "environment" {
   description = "Environment name (e.g. production, staging, development)"
   type        = string
@@ -122,17 +133,6 @@ variable "tags" {
   description = "Common tags to apply to all resources"
   type        = map(string)
   default     = {}
-}
-
-variable "name" {
-  description = "Name prefix for all resources"
-  type        = string
-  default     = "vpc"
-
-  validation {
-    condition     = can(regex("^[a-zA-Z0-9-]+$", var.name)) && length(var.name) <= 32
-    error_message = "name must contain only alphanumeric characters and hyphens, and be at most 32 characters."
-  }
 }
 
 variable "cloudwatch_alarm_actions" {

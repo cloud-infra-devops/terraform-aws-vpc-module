@@ -166,26 +166,26 @@ jobs:
           # col widths (pure ASCII, no emoji inside printf fields)
           # col1 = 16 chars, col2 = 16 chars
           row() {
-            local label="$1" result="$2"
+            local emoji="$1" label="$2" result="$3"
             local icon color
             if [[ "$result" == "success" ]]; then icon="PASSED"; color="${BOLD}${GREEN}"
             else                                   icon="FAILED"; color="${BOLD}${RED}"
             fi
-            printf "${B}║${RESET} ${T}%-16s${RESET} ${B}║${RESET} ${color}%16s${RESET} ${B}║${RESET}\n" \
-              "$label" "$icon"
+            printf "${B}║${RESET} ${color}%s${RESET} ${T}%-12s${RESET} ${B}║${RESET} ${color}%16s${RESET} ${B}║${RESET}\n" \
+              "$emoji" "$label" "$icon"
           }
 
           echo ""
           echo -e "${B}╔══════════════════╦══════════════════╗${RESET}"
-          printf  "${B}║${RESET} ${T}%-35s${RESET} ${B}║${RESET}\n" "  🔍 IaC Security Scan Summary"
+          printf  "${B}║${RESET} ${T}%-35s${RESET} ${B}║${RESET}\n" "   IaC Security Scan Summary"
           echo -e "${B}╠══════════════════╦══════════════════╣${RESET}"
-          printf  "${B}║${RESET} ${T}%-16s${RESET} ${B}║${RESET} ${T}%-16s${RESET} ${B}║${RESET}\n" "  SCAN TOOL" "  RESULT"
+          printf  "${B}║${RESET} ${T}%-16s${RESET} ${B}║${RESET} ${T}%-16s${RESET} ${B}║${RESET}\n" "   SCAN TOOL" "   RESULT"
           echo -e "${B}╠══════════════════╬══════════════════╣${RESET}"
-          row "  🛡  Checkov" "$checkov"
+          row "🛡" "  Checkov" "$checkov"
           echo -e "${B}╠══════════════════╬══════════════════╣${RESET}"
-          row "  🔬 Trivy" "$trivy"
+          row "🔬" "  Trivy" "$trivy"
           echo -e "${B}╠══════════════════╬══════════════════╣${RESET}"
-          row "  🧹 TFLint" "$tflint"
+          row "🧹" "  TFLint" "$tflint"
           echo -e "${B}╠══════════════════╩══════════════════╣${RESET}"
 
           if [[ "$checkov" != "success" || "$trivy" != "success" || "$tflint" != "success" ]]; then

@@ -148,12 +148,22 @@ jobs:
     needs: [checkov-scan, trivy-scan, tflint-scan]
     if: always()
     steps:
-      - name: All scans passed
+      - name: Scan Results Summary
         run: |
-          if [[ "${{ needs.checkov-scan.result }}" != "success" || \
-                "${{ needs.trivy-scan.result }}" != "success" || \
-                "${{ needs.tflint-scan.result }}" != "success" ]]; then
-            echo "::error::One or more scans failed. checkov=${{ needs.checkov-scan.result }}, trivy=${{ needs.trivy-scan.result }}, tflint=${{ needs.tflint-scan.result }}"
+          checkov="${{ needs.checkov-scan.result }}"
+          trivy="${{ needs.trivy-scan.result }}"
+          tflint="${{ needs.tflint-scan.result }}"
+
+          status_icon() { [[ "$1" == "success" ]] && echo "✅ PASSED" || echo "❌ FAILED"; }
+
+          echo "| Scan       | Status                    |"
+          echo "|------------|---------------------------|"
+          echo "| Checkov    | $(status_icon $checkov)   |"
+          echo "| Trivy      | $(status_icon $trivy)     |"
+          echo "| TFLint     | $(status_icon $tflint)    |"
+
+          if [[ "$checkov" != "success" || "$trivy" != "success" || "$tflint" != "success" ]]; then
+            echo "::error::One or more scans failed. checkov=$checkov, trivy=$trivy, tflint=$tflint"
             exit 1
           fi
           echo "All scans passed successfully."

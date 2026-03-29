@@ -160,44 +160,44 @@ jobs:
           GREEN="\e[32m"
           RED="\e[31m"
           WHITE="\e[97m"
+          B="${BOLD}${CYAN}"
+          T="${BOLD}${WHITE}"
 
-          B="${BOLD}${CYAN}"   # bold cyan  — used for all border chars
-          T="${BOLD}${WHITE}" # bold white  — used for text inside cells
-
+          # col widths (pure ASCII, no emoji inside printf fields)
+          # col1 = 16 chars, col2 = 16 chars
           row() {
-            local emoji="$1" label="$2" result="$3"
+            local label="$1" result="$2"
             local icon color
-            if [[ "$result" == "success" ]]; then icon="✅  PASSED"; color="${BOLD}${GREEN}"
-            else                                   icon="❌  FAILED"; color="${BOLD}${RED}"
+            if [[ "$result" == "success" ]]; then icon="PASSED"; color="${BOLD}${GREEN}"
+            else                                   icon="FAILED"; color="${BOLD}${RED}"
             fi
-            # col-1: 18 chars wide, col-2: 22 chars wide (plain widths, no ANSI)
-            printf "${B}║${RESET} ${T}%-17s${RESET} ${B}║${RESET} ${color}%-21s${RESET} ${B}║${RESET}\n" \
-              "${emoji}  ${label}" "${icon}"
+            printf "${B}║${RESET} ${T}%-16s${RESET} ${B}║${RESET} ${color}%16s${RESET} ${B}║${RESET}\n" \
+              "$label" "$icon"
           }
 
           echo ""
-          echo -e "${B}╔═══════════════════╦═══════════════════════╗${RESET}"
-          echo -e "${B}║${RESET} ${T}       🔍  IaC Security Scan Summary   ${B}║${RESET}"
-          echo -e "${B}╠═══════════════════╦═══════════════════════╣${RESET}"
-          echo -e "${B}║${RESET} ${T}  SCAN TOOL        ${B}║${RESET} ${T}  RESULT               ${B}║${RESET}"
-          echo -e "${B}╠═══════════════════╬═══════════════════════╣${RESET}"
-          row "🛡️ " "Checkov"  "$checkov"
-          echo -e "${B}╠═══════════════════╬═══════════════════════╣${RESET}"
-          row "🔬" "Trivy"    "$trivy"
-          echo -e "${B}╠═══════════════════╬═══════════════════════╣${RESET}"
-          row "🧹" "TFLint"   "$tflint"
-          echo -e "${B}╠═══════════════════╩═══════════════════════╣${RESET}"
+          echo -e "${B}╔══════════════════╦══════════════════╗${RESET}"
+          printf  "${B}║${RESET} ${T}%-35s${RESET} ${B}║${RESET}\n" "  🔍 IaC Security Scan Summary"
+          echo -e "${B}╠══════════════════╦══════════════════╣${RESET}"
+          printf  "${B}║${RESET} ${T}%-16s${RESET} ${B}║${RESET} ${T}%-16s${RESET} ${B}║${RESET}\n" "  SCAN TOOL" "  RESULT"
+          echo -e "${B}╠══════════════════╬══════════════════╣${RESET}"
+          row "  🛡  Checkov" "  $checkov"
+          echo -e "${B}╠══════════════════╬══════════════════╣${RESET}"
+          row "  🔬 Trivy" "  $trivy"
+          echo -e "${B}╠══════════════════╬══════════════════╣${RESET}"
+          row "  🧹 TFLint" "  $tflint"
+          echo -e "${B}╠══════════════════╩══════════════════╣${RESET}"
 
           if [[ "$checkov" != "success" || "$trivy" != "success" || "$tflint" != "success" ]]; then
-            echo -e "${B}║${RESET}  ${BOLD}${RED}⛔  Overall : FAILED — check logs above    ${RESET}${B}║${RESET}"
-            echo -e "${B}╚═══════════════════════════════════════════╝${RESET}"
+            printf "${B}║${RESET} ${BOLD}${RED}%-35s${RESET} ${B}║${RESET}\n" "  ⛔ Overall : FAILED"
+            echo -e "${B}╚═════════════════════════════════════╝${RESET}"
             echo ""
             echo "::error::One or more scans failed. checkov=$checkov, trivy=$trivy, tflint=$tflint"
             exit 1
           fi
 
-          echo -e "${B}║${RESET}  ${BOLD}${GREEN}🎉  Overall : ALL SCANS PASSED             ${RESET}${B}║${RESET}"
-          echo -e "${B}╚═══════════════════════════════════════════╝${RESET}"
+          printf "${B}║${RESET} ${BOLD}${GREEN}%-35s${RESET} ${B}║${RESET}\n" "  🎉 Overall : ALL SCANS PASSED"
+          echo -e "${B}╚═════════════════════════════════════╝${RESET}"
           echo ""
 
   # terraform-init-validate-plan:

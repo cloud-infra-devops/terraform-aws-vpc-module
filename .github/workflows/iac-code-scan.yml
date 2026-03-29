@@ -181,11 +181,11 @@ jobs:
           echo -e "${B}╠══════════════════╦══════════════════╣${RESET}"
           printf  "${B}║${RESET} ${T}%-16s${RESET} ${B}║${RESET} ${T}%-16s${RESET} ${B}║${RESET}\n" "  SCAN TOOL" "  RESULT"
           echo -e "${B}╠══════════════════╬══════════════════╣${RESET}"
-          row "  🛡  Checkov" "  $checkov"
+          row "  🛡  Checkov" "$checkov"
           echo -e "${B}╠══════════════════╬══════════════════╣${RESET}"
-          row "  🔬 Trivy" "  $trivy"
+          row "  🔬 Trivy" "$trivy"
           echo -e "${B}╠══════════════════╬══════════════════╣${RESET}"
-          row "  🧹 TFLint" "  $tflint"
+          row "  🧹 TFLint" "$tflint"
           echo -e "${B}╠══════════════════╩══════════════════╣${RESET}"
 
           if [[ "$checkov" != "success" || "$trivy" != "success" || "$tflint" != "success" ]]; then

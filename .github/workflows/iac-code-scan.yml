@@ -154,34 +154,50 @@ jobs:
           trivy="${{ needs.trivy-scan.result }}"
           tflint="${{ needs.tflint-scan.result }}"
 
-          status_icon()  { [[ "$1" == "success" ]] && echo "✅ PASSED" || echo "❌ FAILED"; }
-          status_color() { [[ "$1" == "success" ]] && echo "\e[32m" || echo "\e[31m"; }
           RESET="\e[0m"
           BOLD="\e[1m"
           CYAN="\e[36m"
-          YELLOW="\e[33m"
+          GREEN="\e[32m"
+          RED="\e[31m"
+          WHITE="\e[97m"
+
+          B="${BOLD}${CYAN}"   # bold cyan  — used for all border chars
+          T="${BOLD}${WHITE}" # bold white  — used for text inside cells
+
+          row() {
+            local emoji="$1" label="$2" result="$3"
+            local icon color
+            if [[ "$result" == "success" ]]; then icon="✅  PASSED"; color="${BOLD}${GREEN}"
+            else                                   icon="❌  FAILED"; color="${BOLD}${RED}"
+            fi
+            # col-1: 18 chars wide, col-2: 22 chars wide (plain widths, no ANSI)
+            printf "${B}║${RESET} ${T}%-17s${RESET} ${B}║${RESET} ${color}%-21s${RESET} ${B}║${RESET}\n" \
+              "${emoji}  ${label}" "${icon}"
+          }
 
           echo ""
-          echo -e "${BOLD}${CYAN}╔══════════════════════════════════════════════════╗${RESET}"
-          echo -e "${BOLD}${CYAN}║       🔍  IaC Security Scan Results Summary      ║${RESET}"
-          echo -e "${BOLD}${CYAN}╠══════════════════════════════════════════════════╣${RESET}"
-          echo -e "${BOLD}${CYAN}║  Tool         │ Status                           ║${RESET}"
-          echo -e "${BOLD}${CYAN}╠═══════════════╪══════════════════════════════════╣${RESET}"
-          echo -e "${BOLD}${CYAN}║${RESET}  🛡️  Checkov   │ $(status_color $checkov)${BOLD}$(status_icon $checkov)${RESET}$(status_color $checkov)                          ${RESET}${BOLD}${CYAN}║${RESET}"
-          echo -e "${BOLD}${CYAN}║${RESET}  🔬  Trivy     │ $(status_color $trivy)${BOLD}$(status_icon $trivy)${RESET}$(status_color $trivy)                          ${RESET}${BOLD}${CYAN}║${RESET}"
-          echo -e "${BOLD}${CYAN}║${RESET}  🧹  TFLint    │ $(status_color $tflint)${BOLD}$(status_icon $tflint)${RESET}$(status_color $tflint)                          ${RESET}${BOLD}${CYAN}║${RESET}"
-          echo -e "${BOLD}${CYAN}╠══════════════════════════════════════════════════╣${RESET}"
+          echo -e "${B}╔═══════════════════╦═══════════════════════╗${RESET}"
+          echo -e "${B}║${RESET} ${T}       🔍  IaC Security Scan Summary   ${B}║${RESET}"
+          echo -e "${B}╠═══════════════════╦═══════════════════════╣${RESET}"
+          echo -e "${B}║${RESET} ${T}  SCAN TOOL        ${B}║${RESET} ${T}  RESULT               ${B}║${RESET}"
+          echo -e "${B}╠═══════════════════╬═══════════════════════╣${RESET}"
+          row "🛡️ " "Checkov"  "$checkov"
+          echo -e "${B}╠═══════════════════╬═══════════════════════╣${RESET}"
+          row "🔬" "Trivy"    "$trivy"
+          echo -e "${B}╠═══════════════════╬═══════════════════════╣${RESET}"
+          row "🧹" "TFLint"   "$tflint"
+          echo -e "${B}╠═══════════════════╩═══════════════════════╣${RESET}"
 
           if [[ "$checkov" != "success" || "$trivy" != "success" || "$tflint" != "success" ]]; then
-            echo -e "${BOLD}${CYAN}║${RESET}  ${BOLD}\e[31m⛔  Overall: FAILED — review scan output above${RESET}   ${BOLD}${CYAN}║${RESET}"
-            echo -e "${BOLD}${CYAN}╚══════════════════════════════════════════════════╝${RESET}"
+            echo -e "${B}║${RESET}  ${BOLD}${RED}⛔  Overall : FAILED — check logs above    ${RESET}${B}║${RESET}"
+            echo -e "${B}╚═══════════════════════════════════════════╝${RESET}"
             echo ""
             echo "::error::One or more scans failed. checkov=$checkov, trivy=$trivy, tflint=$tflint"
             exit 1
           fi
 
-          echo -e "${BOLD}${CYAN}║${RESET}  ${BOLD}\e[32m🎉  Overall: ALL SCANS PASSED SUCCESSFULLY!${RESET}      ${BOLD}${CYAN}║${RESET}"
-          echo -e "${BOLD}${CYAN}╚══════════════════════════════════════════════════╝${RESET}"
+          echo -e "${B}║${RESET}  ${BOLD}${GREEN}🎉  Overall : ALL SCANS PASSED             ${RESET}${B}║${RESET}"
+          echo -e "${B}╚═══════════════════════════════════════════╝${RESET}"
           echo ""
 
   # terraform-init-validate-plan:

@@ -21,7 +21,7 @@ provider "aws" {
 }
 
 module "vpc" {
-  source = "../"
+  source = "github.com/cloud-infra-devops/terraform-aws-vpc-module?ref=v1.0.0"
 
   # ── Required inputs ────────────────────────────────────────────────────────
   aws_region = "us-east-1"

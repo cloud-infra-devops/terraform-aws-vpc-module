@@ -21,7 +21,7 @@ provider "aws" {
 }
 
 module "vpc" {
-  source = "github.com/cloud-infra-devops/terraform-aws-vpc-module?ref=v1.0.1"
+  source = "github.com/cloud-infra-devops/terraform-aws-vpc-module?ref=v1.0.2"
 
   # ── Required inputs ────────────────────────────────────────────────────────
   aws_region = "us-east-1"
@@ -30,8 +30,8 @@ module "vpc" {
   # ── Optional: naming & tagging ─────────────────────────────────────────────
   name        = "duke-aim-ima"
   environment = "dev"
-  owner       = "cloud-infra-devops"
   project     = "duke-data-aim-ima"
+  owner       = "cloud-infra-devops"
 
   tags = {
     email = "cloud-infra-devops@duke-energy.com"

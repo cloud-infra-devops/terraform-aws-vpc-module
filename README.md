@@ -14,8 +14,22 @@ A Terraform module that creates a production-ready AWS VPC with public/private s
 ## Usage
 
 ```hcl
+terraform {
+  required_version = ">= 1.14.0"
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 6.0"
+    }
+  }
+}
+
+provider "aws" {
+  region = "us-east-1"
+}
+
 module "vpc" {
-  source = "./terraform-aws-vpc"
+  source = "github.com/cloud-infra-devops/terraform-aws-vpc-module?ref=v1.0.1"
 
   aws_region          = "us-east-1"
   name                = "my-app"
@@ -34,7 +48,6 @@ module "vpc" {
 
   # Flow Logs
   enable_flow_logs         = true
-  flow_logs_retention_days = 30
 
   # CloudWatch alarm notifications
   cloudwatch_alarm_actions = ["arn:aws:sns:us-east-1:123456789012:alerts"]

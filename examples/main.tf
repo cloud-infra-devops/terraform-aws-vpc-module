@@ -21,18 +21,21 @@ provider "aws" {
 }
 
 module "vpc" {
-  source = "github.com/cloud-infra-devops/terraform-aws-vpc-module?ref=v1.0.0"
+  source = "github.com/cloud-infra-devops/terraform-aws-vpc-module?ref=v1.0.1"
 
   # ── Required inputs ────────────────────────────────────────────────────────
   aws_region = "us-east-1"
   vpc_cidr   = "10.0.0.0/16"
 
   # ── Optional: naming & tagging ─────────────────────────────────────────────
-  name = "example-app"
+  name        = "duke-aim-ima"
+  environment = "dev"
+  owner       = "cloud-infra-devops"
+  project     = "duke-data-aim-ima"
 
   tags = {
-    Environment = "dev"
-    Team        = "platform"
+    email = "cloud-infra-devops@duke-energy.com"
+    team  = "Cloud DevOps Platform Engineering"
   }
 
   # ── Optional: subnet layout ────────────────────────────────────────────────
@@ -54,8 +57,7 @@ module "vpc" {
   single_nat_gateway = false # false = one NAT GW per AZ; true = single shared NAT GW
 
   # ── Optional: VPC Flow Logs ────────────────────────────────────────────────
-  enable_flow_logs         = true
-  flow_logs_retention_days = 30
+  enable_flow_logs = true
 
   # ── Optional: CloudWatch alarm notifications ───────────────────────────────
   # Provide SNS topic ARNs to receive alarm notifications.

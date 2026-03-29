@@ -24,6 +24,11 @@ resource "aws_vpc" "this" {
   tags = merge(local.common_tags, { Name = var.name })
 }
 
+resource "aws_default_security_group" "this" {
+  vpc_id = aws_vpc.this.id
+  tags   = merge(local.common_tags, { Name = "${var.name}-default-sg" })
+}
+
 resource "aws_vpc_ipv4_cidr_block_association" "secondary" {
   count      = var.secondary_vpc_cidr != null ? 1 : 0
   vpc_id     = aws_vpc.this.id
@@ -44,9 +49,8 @@ resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.this.id
   cidr_block              = cidrsubnet(var.vpc_cidr, 8, count.index)
   availability_zone       = local.azs[count.index % length(local.azs)]
-  map_public_ip_on_launch = true
-
-  tags = merge(local.common_tags, { Name = "${var.name}-public-${count.index + 1}", Tier = "public" })
+  map_public_ip_on_launch = false
+  tags                    = merge(local.common_tags, { Name = "${var.name}-public-${count.index + 1}", Tier = "public" })
 }
 
 resource "aws_route_table" "public" {

@@ -154,19 +154,35 @@ jobs:
           trivy="${{ needs.trivy-scan.result }}"
           tflint="${{ needs.tflint-scan.result }}"
 
-          status_icon() { [[ "$1" == "success" ]] && echo "✅ PASSED" || echo "❌ FAILED"; }
+          status_icon()  { [[ "$1" == "success" ]] && echo "✅ PASSED" || echo "❌ FAILED"; }
+          status_color() { [[ "$1" == "success" ]] && echo "\e[32m" || echo "\e[31m"; }
+          RESET="\e[0m"
+          BOLD="\e[1m"
+          CYAN="\e[36m"
+          YELLOW="\e[33m"
 
-          echo "| Scan       | Status                    |"
-          echo "|------------|---------------------------|"
-          echo "| Checkov    | $(status_icon $checkov)   |"
-          echo "| Trivy      | $(status_icon $trivy)     |"
-          echo "| TFLint     | $(status_icon $tflint)    |"
+          echo ""
+          echo -e "${BOLD}${CYAN}╔══════════════════════════════════════════════════╗${RESET}"
+          echo -e "${BOLD}${CYAN}║       🔍  IaC Security Scan Results Summary      ║${RESET}"
+          echo -e "${BOLD}${CYAN}╠══════════════════════════════════════════════════╣${RESET}"
+          echo -e "${BOLD}${CYAN}║  Tool         │ Status                           ║${RESET}"
+          echo -e "${BOLD}${CYAN}╠═══════════════╪══════════════════════════════════╣${RESET}"
+          echo -e "${BOLD}${CYAN}║${RESET}  🛡️  Checkov   │ $(status_color $checkov)${BOLD}$(status_icon $checkov)${RESET}$(status_color $checkov)                          ${RESET}${BOLD}${CYAN}║${RESET}"
+          echo -e "${BOLD}${CYAN}║${RESET}  🔬  Trivy     │ $(status_color $trivy)${BOLD}$(status_icon $trivy)${RESET}$(status_color $trivy)                          ${RESET}${BOLD}${CYAN}║${RESET}"
+          echo -e "${BOLD}${CYAN}║${RESET}  🧹  TFLint    │ $(status_color $tflint)${BOLD}$(status_icon $tflint)${RESET}$(status_color $tflint)                          ${RESET}${BOLD}${CYAN}║${RESET}"
+          echo -e "${BOLD}${CYAN}╠══════════════════════════════════════════════════╣${RESET}"
 
           if [[ "$checkov" != "success" || "$trivy" != "success" || "$tflint" != "success" ]]; then
+            echo -e "${BOLD}${CYAN}║${RESET}  ${BOLD}\e[31m⛔  Overall: FAILED — review scan output above${RESET}   ${BOLD}${CYAN}║${RESET}"
+            echo -e "${BOLD}${CYAN}╚══════════════════════════════════════════════════╝${RESET}"
+            echo ""
             echo "::error::One or more scans failed. checkov=$checkov, trivy=$trivy, tflint=$tflint"
             exit 1
           fi
-          echo "All scans passed successfully."
+
+          echo -e "${BOLD}${CYAN}║${RESET}  ${BOLD}\e[32m🎉  Overall: ALL SCANS PASSED SUCCESSFULLY!${RESET}      ${BOLD}${CYAN}║${RESET}"
+          echo -e "${BOLD}${CYAN}╚══════════════════════════════════════════════════╝${RESET}"
+          echo ""
 
   # terraform-init-validate-plan:
   #   runs-on: ubuntu-latest

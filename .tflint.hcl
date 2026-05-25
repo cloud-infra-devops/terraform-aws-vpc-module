@@ -1,5 +1,8 @@
 # https://gist.githubusercontent.com/guivin/bcf328481350c6fc97ffbdcf832573f9/raw/21c513ad05af066559141f3edf022df29ad7e9e0/.tflint.hcl
 # https://github.com/terraform-linters/tflint-ruleset-aws
+tflint {
+  required_version = ">= 0.38.0"
+}
 plugin "aws" {
   enabled = true
   version = "0.44.0"
@@ -87,15 +90,6 @@ rule "terraform_unused_required_providers" {
   enabled = true
 }
 
-rule "aws_resource_missing_tags" {
-  enabled = true
-  tags = [
-    "Project",
-    "Environment",
-    "Owner",
-  ]
-}
-
 rule "terraform_naming_convention" {
   enabled = true
   format  = "none"
@@ -106,4 +100,19 @@ rule "terraform_naming_convention" {
 
 rule "aws_instance_invalid_type" {
   enabled = true
+}
+rule "aws_instance_previous_type" {
+  enabled = true
+  # List of instance types that are not allowed
+  instance_types = []
+}
+rule "aws_resource_missing_tags" {
+  enabled = true
+  tags = [
+    "Name",
+    "Owner",
+    "Project",
+    "Environment",
+    "Email",
+  ]
 }

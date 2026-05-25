@@ -12,7 +12,9 @@ run-name: ${{ github.actor }} has triggered the GitHub Actions
 on:
   workflow_call:
     secrets:
-      TF_API_TOKEN:
+      # TF_API_TOKEN:
+      #   required: true
+      INFRACOST_API_KEY:
         required: true
   # Triggers the workflow on push or pull request events
   push:
@@ -22,16 +24,38 @@ on:
     paths-ignore:
       - "**/README.md"
   pull_request:
-    branches: ["feature/*", "develop", "release", "master"]
-    types: [assigned, opened, reopened, edited, ready_for_review, synchronize]
+    branches: ["develop", "release", "master", "main"]
+    types:
+      [
+        assigned,
+        unassigned,
+        labeled,
+        unlabeled,
+        opened,
+        edited,
+        closed,
+        reopened,
+        synchronize,
+        converted_to_draft,
+        ready_for_review,
+        locked,
+        unlocked,
+        review_requested,
+        review_request_removed,
+        auto_merge_enabled,
+        auto_merge_disabled,
+      ]
 env:
-  tfcode_path: "."
-  # tfc_hostname: "app.terraform.io"
-  # tfc_organisation: "cloud-infra-dev"
-  # tfc_workspace: "testing-terraform-aws-modules"
+  # tfcode_path: "."
+  # TF_CLOUD_ORGANIZATION: "cloud-infra-devops-architect"
+  # TF_API_TOKEN: "${{ secrets.TF_API_TOKEN }}"
+  # TF_WORKSPACE: "gh-actions-pipeline"
+  # AWS_REGION: ${{ secrets.AWS_REGION }}
+  CONFIG_DIRECTORY: "."
+  TF_LOG: INFO
 
 jobs:
-  check-required-files:
+  pre-commit-hooks:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -39,7 +63,39 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
-          fetch-depth: 1
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v6.2.2
+        with:
+          tflint_version: v0.61.0
+
+      - name: Install pre-commit
+        run: pip install pre-commit
+
+      - name: Run pre-commit hooks
+        run: pre-commit run --all-files --show-diff-on-failure
+
+  check-required-files:
+    runs-on: ubuntu-latest
+    needs: pre-commit-hooks
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Check required files exist
         run: |
@@ -47,6 +103,10 @@ jobs:
           if [ ! -f "examples/main.tf" ]; then
             echo "::error::Missing required file: examples/main.tf"
             missing=1
+          fi
+          if [ ! -f "examples/README.md" ]; then
+          echo "::error::Missing required file: examples/README.md"
+          missing=1
           fi
           if [ ! -f "README.md" ]; then
             echo "::error::Missing required file: README.md"
@@ -61,6 +121,43 @@ jobs:
             missing=1
           fi
           exit $missing
+
+  infracost:
+    runs-on: ubuntu-latest
+    needs: check-required-files
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Infracost
+        uses: infracost/actions/setup@v3
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+
+      - name: Generate Infracost cost estimate
+        run: |
+          infracost breakdown \
+            --path=${{ env.CONFIG_DIRECTORY }} \
+            --format=json \
+            --out-file=/tmp/infracost.json
+
+      - name: Show cost breakdown in logs
+        run: infracost output --path=/tmp/infracost.json --format=table
+
+      - name: Post Infracost comment on PR
+        if: github.event_name == 'pull_request'
+        run: |
+          infracost comment github \
+            --path=/tmp/infracost.json \
+            --repo=${{ github.repository }} \
+            --github-token=${{ github.token }} \
+            --pull-request=${{ github.event.pull_request.number }} \
+            --behavior=update
 
   checkov-scan:
     runs-on: ubuntu-latest
@@ -77,7 +174,7 @@ jobs:
       - name: Run Checkov scan
         uses: bridgecrewio/checkov-action@v12.3092.0
         with:
-          directory: ${{ env.tfcode_path }}
+          directory: ${{ env.CONFIG_DIRECTORY }}
           framework: terraform
           output_format: cli,sarif
           output_file_path: console,results.sarif
@@ -91,7 +188,6 @@ jobs:
       #   with:
       #     sarif_file: results.sarif
       #     category: checkov
-
   trivy-scan:
     runs-on: ubuntu-latest
     needs: check-required-files
@@ -103,24 +199,21 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 1
-
       - name: Run Trivy config scan for Terraform
         uses: aquasecurity/trivy-action@0.35.0
         with:
           scan-type: "config"
           ignore-unfixed: true
-          scan-ref: ${{ env.tfcode_path }}
+          scan-ref: ${{ env.CONFIG_DIRECTORY }}
           format: "table"
           severity: "CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN"
           exit-code: "1"
           trivy-config: trivy.yaml
-
       - name: Fail on Trivy misconfiguration findings
         if: failure()
         run: |
           echo "::error::Trivy detected misconfiguration errors. Review the scan output above."
           exit 1
-
   tflint-scan:
     runs-on: ubuntu-latest
     needs: check-required-files
@@ -132,52 +225,132 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 1
-
       - name: Setup TFLint
         uses: terraform-linters/setup-tflint@v6.2.2
         with:
           tflint_version: v0.61.0
-
       - name: Run TFLint
         run: |
           tflint --init
-          tflint --chdir=${{ env.tfcode_path }} --format=compact
+          tflint --chdir=${{ env.CONFIG_DIRECTORY }} --format=compact
         continue-on-error: false
+  amazonq-rules-check:
+    runs-on: ubuntu-latest
+    needs: check-required-files
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Verify Amazon Q rules file exists
+        run: |
+          if [ ! -f ".amazonq/rules/vpc-module-rules.md" ]; then
+            echo "::error::Missing required file: .amazonq/rules/vpc-module-rules.md"
+            exit 1
+          fi
+          echo "✅ Amazon Q rules file found: .amazonq/rules/vpc-module-rules.md"
+
+      - name: Validate rules against module conventions
+        run: |
+          set -e
+          errors=0
+
+          # Rule: map_public_ip_on_launch must be false
+          if grep -rn "map_public_ip_on_launch\s*=\s*true" --include="*.tf" .; then
+            echo "::error::map_public_ip_on_launch must be false on all subnets (.amazonq/rules/vpc-module-rules.md#security)"
+            errors=$((errors + 1))
+          fi
+
+          # Rule: No hardcoded SNS ARNs
+          if grep -rn '"arn:aws:sns:' --include="*.tf" .; then
+            echo "::error::Hardcoded SNS ARNs detected — use var.cloudwatch_alarm_actions (.amazonq/rules/vpc-module-rules.md#cloudwatch-alarms)"
+            errors=$((errors + 1))
+          fi
+
+          # Rule: EIP domain must use 'domain = "vpc"' not deprecated 'vpc = true'
+          if grep -rn 'vpc\s*=\s*true' --include="*.tf" .; then
+            echo "::error::Deprecated aws_eip attribute 'vpc = true' detected — use 'domain = \"vpc\"' (.amazonq/rules/vpc-module-rules.md#what-to-avoid)"
+            errors=$((errors + 1))
+          fi
+
+          # Rule: Required files must exist
+          for f in main.tf variables.tf outputs.tf versions.tf flow_logs.tf cloudwatch_alarms.tf examples/main.tf; do
+            if [ ! -f "$f" ]; then
+              echo "::error::Missing required module file: $f (.amazonq/rules/vpc-module-rules.md#file-structure)"
+              errors=$((errors + 1))
+            fi
+          done
+
+          # Rule: All variables must have a description
+          if grep -n "^variable" variables.tf | grep -v "description" > /dev/null 2>&1; then
+            missing=$(awk '/^variable/{name=$0} !/description/ && name{print name; name=""}' variables.tf)
+            if [ -n "$missing" ]; then
+              echo "::warning::Some variables may be missing descriptions — verify variables.tf (.amazonq/rules/vpc-module-rules.md#variable-definitions)"
+            fi
+          fi
+
+          # Rule: Outputs must have descriptions
+          if grep -A1 "^output" outputs.tf | grep -v "description" | grep -v "^--$" | grep "^output" > /dev/null 2>&1; then
+            echo "::warning::Some outputs may be missing descriptions — verify outputs.tf (.amazonq/rules/vpc-module-rules.md#outputs)"
+          fi
+
+          if [ $errors -gt 0 ]; then
+            echo "::error::Amazon Q rules check failed with $errors violation(s). See .amazonq/rules/vpc-module-rules.md for details."
+            exit 1
+          fi
+
+          echo "✅ All Amazon Q Developer rules checks passed."
 
   scan-results:
     runs-on: ubuntu-latest
-    needs: [checkov-scan, trivy-scan, tflint-scan]
+    needs:
+      [
+        pre-commit-hooks,
+        infracost,
+        checkov-scan,
+        trivy-scan,
+        tflint-scan,
+        amazonq-rules-check,
+      ]
     if: always()
     steps:
       - name: Scan Results Summary
         run: |
+          precommit="${{ needs.pre-commit-hooks.result }}"
+          infracost="${{ needs.infracost.result }}"
           checkov="${{ needs.checkov-scan.result }}"
           trivy="${{ needs.trivy-scan.result }}"
           tflint="${{ needs.tflint-scan.result }}"
+          amazonq="${{ needs.amazonq-rules-check.result }}"
 
           status_icon()  { [[ "$1" == "success" ]] && echo "✅ PASSED" || echo "❌ FAILED"; }
           status_color() { [[ "$1" == "success" ]] && echo "\e[32m" || echo "\e[31m"; }
           RESET="\e[0m"
           BOLD="\e[1m"
           CYAN="\e[36m"
-          YELLOW="\e[33m"
 
           echo ""
           echo -e "${BOLD}${CYAN}╔══════════════════════════════════════════════════╗${RESET}"
           echo -e "${BOLD}${CYAN}║       🔍  IaC Security Scan Results Summary      ║${RESET}"
           echo -e "${BOLD}${CYAN}╠══════════════════════════════════════════════════╣${RESET}"
-          echo -e "${BOLD}${CYAN}║  Tool         │ Status                           ║${RESET}"
-          echo -e "${BOLD}${CYAN}╠═══════════════╪══════════════════════════════════╣${RESET}"
-          echo -e "${BOLD}${CYAN}║${RESET}  🛡️  Checkov   │ $(status_color $checkov)${BOLD}$(status_icon $checkov)${RESET}$(status_color $checkov)                          ${RESET}${BOLD}${CYAN}║${RESET}"
-          echo -e "${BOLD}${CYAN}║${RESET}  🔬  Trivy     │ $(status_color $trivy)${BOLD}$(status_icon $trivy)${RESET}$(status_color $trivy)                          ${RESET}${BOLD}${CYAN}║${RESET}"
-          echo -e "${BOLD}${CYAN}║${RESET}  🧹  TFLint    │ $(status_color $tflint)${BOLD}$(status_icon $tflint)${RESET}$(status_color $tflint)                          ${RESET}${BOLD}${CYAN}║${RESET}"
+          echo -e "${BOLD}${CYAN}║  Tool              │ Status                      ║${RESET}"
+          echo -e "${BOLD}${CYAN}╠════════════════════╪═════════════════════════════╣${RESET}"
+          echo -e "${BOLD}${CYAN}║${RESET}  🪝  Pre-commit     │ $(status_color $precommit)${BOLD}$(status_icon $precommit)${RESET}$(status_color $precommit)                     ${RESET}${BOLD}${CYAN}║${RESET}"
+          echo -e "${BOLD}${CYAN}║${RESET}  💰  Infracost      │ $(status_color $infracost)${BOLD}$(status_icon $infracost)${RESET}$(status_color $infracost)                     ${RESET}${BOLD}${CYAN}║${RESET}"
+          echo -e "${BOLD}${CYAN}║${RESET}  🛡️  Checkov        │ $(status_color $checkov)${BOLD}$(status_icon $checkov)${RESET}$(status_color $checkov)                     ${RESET}${BOLD}${CYAN}║${RESET}"
+          echo -e "${BOLD}${CYAN}║${RESET}  🔬  Trivy          │ $(status_color $trivy)${BOLD}$(status_icon $trivy)${RESET}$(status_color $trivy)                     ${RESET}${BOLD}${CYAN}║${RESET}"
+          echo -e "${BOLD}${CYAN}║${RESET}  🧹  TFLint         │ $(status_color $tflint)${BOLD}$(status_icon $tflint)${RESET}$(status_color $tflint)                     ${RESET}${BOLD}${CYAN}║${RESET}"
+          echo -e "${BOLD}${CYAN}║${RESET}  🤖  Amazon Q Rules │ $(status_color $amazonq)${BOLD}$(status_icon $amazonq)${RESET}$(status_color $amazonq)                     ${RESET}${BOLD}${CYAN}║${RESET}"
           echo -e "${BOLD}${CYAN}╠══════════════════════════════════════════════════╣${RESET}"
 
-          if [[ "$checkov" != "success" || "$trivy" != "success" || "$tflint" != "success" ]]; then
+          if [[ "$precommit" != "success" || "$infracost" != "success" || "$checkov" != "success" || "$trivy" != "success" || "$tflint" != "success" || "$amazonq" != "success" ]]; then
             echo -e "${BOLD}${CYAN}║${RESET}  ${BOLD}\e[31m⛔  Overall: FAILED — review scan output above${RESET}   ${BOLD}${CYAN}║${RESET}"
             echo -e "${BOLD}${CYAN}╚══════════════════════════════════════════════════╝${RESET}"
             echo ""
-            echo "::error::One or more scans failed. checkov=$checkov, trivy=$trivy, tflint=$tflint"
+            echo "::error::One or more scans failed. pre-commit=$precommit, infracost=$infracost, checkov=$checkov, trivy=$trivy, tflint=$tflint, amazonq=$amazonq"
             exit 1
           fi
 
@@ -185,71 +358,169 @@ jobs:
           echo -e "${BOLD}${CYAN}╚══════════════════════════════════════════════════╝${RESET}"
           echo ""
 
-  # terraform-init-validate-plan:
+  # # ── Terraform CI: fmt, init, validate, plan — runs on every PR ─────────────
+  # terraform-plan:
   #   runs-on: ubuntu-latest
-  #   defaults:
-  #     run:
-  #       shell: bash
+  #   needs: scan-results
+  #   if: github.event_name == 'pull_request'
+  #   permissions:
+  #     contents: read # This is required for actions/checkout to work properly and fetch the PR branch refs
+  #     pull-requests: write # This is required for gh bot to comment PRs with the plan output
+  #     id-token: write # Without id-token: write, GitHub won't generate the OIDC token needed for authentication.This is required for requesting the JWT token from GitHub IdP and exchanging it for AWS credentials using aws-actions/configure-aws-credentials action. AWS credentials required for Terraform Init to authenticate with private module registries and for Terraform Plan to authenticate with any AWS data sources or providers that require authentication.
+  #   env:
+  #     TF_IN_AUTOMATION: "true"
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v6
+  #       with:
+  #         fetch-depth: 0 # Fetch full history to ensure Terraform can access all branches and tags if needed for module references
+  #     - name: "Configure AWS Credentials"
+  #       uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+  #           role-session-name: ${{ secrets.ROLE_SESSION_NAME}}
+  #           aws-region: ${{ secrets.AWS_REGION }}
+  #     - name: Verify IAM Role Assumption
+  #       run: |
+  #           aws sts get-caller-identity
+  #     - name: Set up Terraform
+  #       uses: hashicorp/setup-terraform@v3
+  #       with:
+  #         cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+  #         terraform_version: latest
+  #         terraform_wrapper: false
+
+  #     - name: Terraform Format
+  #       id: fmt
+  #       run: terraform fmt -check -recursive
+  #       working-directory: ${{ env.CONFIG_DIRECTORY }}
+  #       continue-on-error: true
+
+  #     - name: Terraform Init
+  #       id: init
+  #       run: terraform init -input=false
+  #       working-directory: ${{ env.CONFIG_DIRECTORY }}
+
+  #     - name: Terraform Validate
+  #       id: validate
+  #       run: terraform validate -no-color
+  #       working-directory: ${{ env.CONFIG_DIRECTORY }}
+
+  #     - name: Terraform Plan
+  #       id: plan
+  #       run: terraform plan -no-color -input=false 2>&1 | tee /tmp/tfplan.txt
+  #       working-directory: ${{ env.CONFIG_DIRECTORY }}
+  #       continue-on-error: true # Don't fail the job here, we want to capture the plan output and post it to the PR comment for review
+
+  #     - name: Post Plan output to PR
+  #       uses: actions/github-script@v7
+  #       with:
+  #         github-token: ${{ github.token }}
+  #         script: |
+  #           const fs = require('fs');
+  #           const raw = fs.readFileSync('/tmp/tfplan.txt', 'utf8');
+  #           const maxLen = 65000;
+  #           const plan = raw.length > maxLen
+  #             ? raw.substring(0, maxLen) + '\n\n... output truncated (> 65 000 chars) ...'
+  #             : raw;
+  #           const icon = s => s === 'success' ? '✅' : s === 'skipped' ? '⏭️' : '❌';
+  #           const body = [
+  #             '## 🏗️ Terraform Plan — `${{ github.head_ref }}`',
+  #             '',
+  #             '| Step | Result |',
+  #             '|------|--------|',
+  #             `| 🎨 Format   | ${icon('${{ steps.fmt.outcome }}')} \`${{ steps.fmt.outcome }}\` |`,
+  #             `| 🔧 Init     | ${icon('${{ steps.init.outcome }}')} \`${{ steps.init.outcome }}\` |`,
+  #             `| ✔️ Validate | ${icon('${{ steps.validate.outcome }}')} \`${{ steps.validate.outcome }}\` |`,
+  #             `| 📋 Plan     | ${icon('${{ steps.plan.outcome }}')} \`${{ steps.plan.outcome }}\` |`,
+  #             '',
+  #             '<details><summary>📄 Show full plan output</summary>',
+  #             '',
+  #             '```hcl',
+  #             plan,
+  #             '```',
+  #             '</details>',
+  #             '',
+  #             `> 🔁 Triggered by **@${{ github.actor }}** · \`${{ github.head_ref }}\` → \`${{ github.base_ref }}\``,
+  #           ].join('\n');
+  #           const { data: comments } = await github.rest.issues.listComments({
+  #             owner: context.repo.owner,
+  #             repo: context.repo.repo,
+  #             issue_number: context.issue.number,
+  #           });
+  #           const existing = comments.find(c =>
+  #             c.user.type === 'Bot' && c.body.includes('## 🏗️ Terraform Plan')
+  #           );
+  #           if (existing) {
+  #             await github.rest.issues.updateComment({
+  #               owner: context.repo.owner,
+  #               repo: context.repo.repo,
+  #               comment_id: existing.id,
+  #               body,
+  #             });
+  #           } else {
+  #             await github.rest.issues.createComment({
+  #               owner: context.repo.owner,
+  #               repo: context.repo.repo,
+  #               issue_number: context.issue.number,
+  #               body,
+  #             });
+  #           }
+
+  #     - name: Fail if plan pipeline failed
+  #       if: steps.init.outcome == 'failure' || steps.validate.outcome == 'failure' || steps.plan.outcome == 'failure'
+  #       run: |
+  #         echo "::error::Terraform plan pipeline failed — review the PR comment for details."
+  #         exit 1
+
+  # # ── Terraform CD: apply — runs ONLY after a reviewed PR is merged ──────────
+  # # Conditions that must ALL be true before apply executes:
+  # #   1. Event is pull_request type closed
+  # #   2. PR was merged (merged == true), not just closed/abandoned
+  # #   3. PR base branch is one of the protected target branches
+  # #   4. PR head branch is a feature branch (not the target branch itself)
+  # #   5. scan-results job passed
+  # terraform-apply:
+  #   runs-on: ubuntu-latest
+  #   needs: scan-results
+  #   if: |
+  #     github.event_name == 'pull_request' &&
+  #     github.event.action == 'closed' &&
+  #     github.event.pull_request.merged == true &&
+  #     (
+  #       github.event.pull_request.base.ref == 'develop' ||
+  #       github.event.pull_request.base.ref == 'release' ||
+  #       github.event.pull_request.base.ref == 'master'  ||
+  #       github.event.pull_request.base.ref == 'main'
+  #     ) &&
+  #     github.event.pull_request.base.ref != github.event.pull_request.head.ref &&
+  #     github.event.pull_request.reviews_url != '' &&
+  #     github.event.pull_request.review_comments >= 0
   #   permissions:
   #     contents: read
   #     id-token: write
-  #     packages: read
+  #   env:
+  #     TF_IN_AUTOMATION: "true"
   #   steps:
-  #     # Configure HCP Terraform API token, since we are using remote backend option of HCP Terraform in AWS code
-  #     - name: Setup Terraform CLI
-  #       uses: hashicorp/setup-terraform@v2.0.2
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v6
   #       with:
-  #         terraform_wrapper: false
+  #         fetch-depth: 0
+  #     - name: "Configure AWS Credentials"
+  #       uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #             role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+  #             role-session-name: ${{ secrets.ROLE_SESSION_NAME}}
+  #             aws-region: ${{ secrets.AWS_REGION }}
+  #     - name: Set up Terraform
+  #       uses: hashicorp/setup-terraform@v3
+  #       with:
   #         cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
   #         terraform_version: latest
-  #     # Invoke the Terraform commands
-  #     - name: Terraform format check
-  #       # Add the AWS Creds as ENV variable in HCP Terraform workspace, since the tf run happens in HCP Terraform environment
-
-  #       run: |
-  #         echo `pwd`
-  #         echo "** Running Terraform Format Check**"
-  #         terraform fmt -check -recursive
-  #       working-directory: ${{ env.tfcode_path }}
-  #       continue-on-error: true
-  #     - name: Terraform init and validate
-  #       run: |
-  #         echo `pwd`
-  #         echo "** Running Terraform Init**"
-  #         terraform init
-
-  #         echo "** Running Terraform Validate**"
-  #         terraform validate
-  #       working-directory: ${{ env.tfcode_path }}
-  #       continue-on-error: false
-  #     - name: Terraform Plan
-  #       uses: hashicorp/tfc-workflows-github/actions/create-run@v1.3.0
-  #       id: run
-  #       with:
-  #         workspace: ${{ env.tfc_workspace }}
-  #         plan_only: true
-  #         message: "Plan Run from GitHub Actions"
-  #         ## Specify hostname,token,organization to connect to the HCP Terraform Cloud environment, since we are using remote backend option of HCP Terraform in AWS code
-  #         hostname: ${{ env.tfc_hostname }}
-  #         token: ${{ secrets.TF_API_TOKEN }}
-  #         organization: ${{ env.tfc_organisation }}
-  #     - name: Check Terraform Plan status
-  #       run: |
-  #         if [ "${{ steps.run.outputs.run_status }}" != "planned_and_finished" ]; then
-  #           echo "::error::Terraform Plan failed with status: ${{ steps.run.outputs.run_status }}"
-  #           exit 1
-  #         fi
-  #     - name: Terraform Plan Output
-  #       uses: hashicorp/tfc-workflows-github/actions/plan-output@v1.3.0
-  #       id: plan-output
-  #       with:
-  #         hostname: ${{ env.tfc_hostname }}
-  #         token: ${{ secrets.TF_API_TOKEN }}
-  #         organization: ${{ env.tfc_organisation }}
-  #         plan: ${{ steps.run.outputs.plan_id }}
-  #     - name: Reference Plan Output
-  #       run: |-
-  #         echo "Plan status: ${{ steps.plan-output.outputs.plan_status }}"
-  #         echo "Resources to Add: ${{ steps.plan-output.outputs.add }}"
-  #         echo "Resources to Change: ${{ steps.plan-output.outputs.change }}"
-  #         echo "Resources to Destroy: ${{ steps.plan-output.outputs.destroy }}"
+  #         terraform_wrapper: false
+  #     - name: Terraform Init
+  #       run: terraform init -input=false
+  #       working-directory: ${{ env.CONFIG_DIRECTORY }}
+  #     - name: Terraform Apply
+  #       run: terraform apply -auto-approve -input=false
+  #       working-directory: ${{ env.CONFIG_DIRECTORY }}

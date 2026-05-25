@@ -39,5 +39,7 @@ terraform.rc
 .vscode/*
 .idea
 .idea/*
+.claude
+.claude/*
 
 

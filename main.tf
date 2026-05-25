@@ -19,7 +19,6 @@ locals {
 }
 
 # ─── VPC ────────────────────────────────────────────────────────────────────
-
 resource "aws_vpc" "this" {
   cidr_block           = var.vpc_cidr
   instance_tenancy     = var.instance_tenancy
@@ -41,14 +40,12 @@ resource "aws_vpc_ipv4_cidr_block_association" "secondary" {
 }
 
 # ─── INTERNET GATEWAY ───────────────────────────────────────────────────────
-
 resource "aws_internet_gateway" "this" {
   vpc_id = aws_vpc.this.id
   tags   = merge(local.common_tags, { Name = "${var.name}-igw" })
 }
 
 # ─── PUBLIC SUBNETS ─────────────────────────────────────────────────────────
-
 resource "aws_subnet" "public" {
   count                   = var.num_public_subnets
   vpc_id                  = aws_vpc.this.id
@@ -76,7 +73,6 @@ resource "aws_route_table_association" "public" {
 }
 
 # ─── NAT GATEWAY ────────────────────────────────────────────────────────────
-
 resource "aws_eip" "nat" {
   count  = local.nat_count
   domain = "vpc"
@@ -84,12 +80,11 @@ resource "aws_eip" "nat" {
 }
 
 resource "aws_nat_gateway" "this" {
+  depends_on    = [aws_internet_gateway.this]
   count         = local.nat_count
   allocation_id = aws_eip.nat[count.index].id
   subnet_id     = aws_subnet.public[count.index].id
   tags          = merge(local.common_tags, { Name = "${var.name}-nat-${count.index + 1}" })
-
-  depends_on = [aws_internet_gateway.this]
 }
 
 # ─── PRIVATE SUBNETS (per layer) ────────────────────────────────────────────

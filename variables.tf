@@ -12,6 +12,11 @@ variable "aws_account_id" {
   description = "The AWS account ID to deploy resources"
   type        = string
   default     = "211125325120" #Put AWS Account ID
+
+  validation {
+    condition     = can(regex("^[0-9]{12}$", var.aws_account_id))
+    error_message = "aws_account_id must be a valid 12-digit AWS account ID."
+  }
 }
 
 variable "vpc_cidr" {
